@@ -1,7 +1,7 @@
 import os
 from tokenizer import Tokenizer
 from vm_writer import VM_Writer
-from symboltable import SymbolTable
+from symboltable import SymbolTable, VariableNotFoundError
 
 class CompilationEngine:
 
@@ -18,14 +18,16 @@ class CompilationEngine:
         
         """
 
-        #self.output_file = os.path.splitext(input_file)[0] + ".XML"
+        self.output_file = os.path.splitext(input_file)[0] + ".XML"
         self.input_file = input_file
         self.tokenizer = Tokenizer(input_file=input_file)
         self.vm_writer = VM_Writer(input_file.replace(".jack", ".vm"))
+        self.built_in_classes = ["Math", "String", "Array", "Output", "Screen", "Keyboard", "Memory", "Sys"]
         self.symbol_table = SymbolTable()
         self.class_name = ""
         self.tokenizer.index = 0
         self.indent_level = 0
+        self._label_num=0
         self.output = open(self.output_file, "w")
 
         if self.tokenizer.tokens and len(self.tokenizer.tokens) > 0:
@@ -86,6 +88,15 @@ class CompilationEngine:
             raise SyntaxError(f"Error on line {line_number}: expected either '{", ".join(map(str, expected_token))}' but received '{current}'")
         
 
+
+    #generate label helper
+    def _generate_label(self, prefix: str) -> str:
+        self._label_num += 1
+        return f"{prefix}_{self._label_num}"
+
+    #mapping vm segments
+    def _get_vm_segment(self, kind:str)->str:
+        return "this" if kind == "field"  else kind
 
     def _compileClass(self):
         #compiles a complete class - its the first method to be called by the engine
@@ -224,6 +235,7 @@ class CompilationEngine:
 
         #reset symbol table
         self.symbol_table._startSubroutine()
+        self._label_num = 0  # Reset label counter for each subroutine
 
 
         #remember methods you have to handle this
@@ -446,7 +458,7 @@ class CompilationEngine:
 
         #get variable name
         var_name = self.tokenizer.current_token
-        memory_segment = self.symbol_table._kindof(name=var_name)
+        memory_segment = self._get_vm_segment(self.symbol_table._kindof(name=var_name))
         index = self.symbol_table._indexof(name=var_name)
         self.tokenizer.advance()
 
@@ -528,10 +540,10 @@ class CompilationEngine:
         """
        
         #generate unique labels
-        label_true = f"IF_TRUE_{id(self)}"
-        label_false = f"IF_FALSE_{id(self)}"
-        label_end = f"IF_END_{id(self)}"
-
+        label_true = self._generate_label("IF_TRUE")
+        label_false = self._generate_label("IF_FALSE")
+        label_end = self._generate_label("IF_END")
+     
         #process if
         self.tokenizer.advance()
 
@@ -586,55 +598,44 @@ class CompilationEngine:
         Compiles a while statement.
         Grammar: whileStatement: 'while' '(' expression ')' '{' statements '}'
         """
-        # Write the opening tag for the while statement.
-    
-
-        label_exp = f"WHILE_EXP_{id(self)}"
-        label_end = f"WHILE_END_{id(self)}"
-
-        # --------------------------------------------------
-        # Process the 'while' keyword.
-        # --------------------------------------------------
+        # Generate sequential labels instead of using object IDs
+        while_exp_label = f"WHILE_EXP{self._label_num}"
+        while_end_label = f"WHILE_END{self._label_num}"
+        self._label_num += 1  # Increment for next label
+        
+        # Write the WHILE_EXP label before evaluating the condition
+        self.vm_writer.writeLabel(while_exp_label)
+        
+        # Process the 'while' keyword
         self.tokenizer.advance()  # Advance to the '(' symbol
-
-        # --------------------------------------------------
-        # Process the '(' symbol.
-        # --------------------------------------------------
+        
+        # Process the '(' symbol
         self.tokenizer.advance()  # Advance to the expression
-
-        # --------------------------------------------------
-        # Compile the expression inside the parentheses.
-        # --------------------------------------------------
+        
+        # Compile the expression inside the parentheses
         self._compileExpression()
-
-        # --------------------------------------------------
-        # Process the ')' symbol.
-        # --------------------------------------------------
+        
+        # Process the ')' symbol
         self.tokenizer.advance()  # Advance to the '{' symbol
-
+        
+        # Negate the condition and if true, exit the loop
         self.vm_writer.writeArithmetic("not")
-        self.vm_writer.writeIf(label_end)
-
-        # --------------------------------------------------
-        # Process the '{' symbol that starts the while loop body.
-        # --------------------------------------------------
+        self.vm_writer.writeIf(while_end_label)
+        
+        # Process the '{' symbol that starts the while loop body
         self.tokenizer.advance()  # Advance to the statements inside the while loop
-
-        # --------------------------------------------------
-        # Compile the statements inside the while loop.
-        # --------------------------------------------------
+        
+        # Compile the statements inside the while loop
         self._compileStatements()
-
-        # --------------------------------------------------
-        # Process the closing '}' symbol.
-        # --------------------------------------------------
+        
+        # Process the closing '}' symbol
         self.tokenizer.advance()  # Move past the '}'
-
-        self.vm_writer.writeGoto(label_exp)
-
-
-        #end loop
-        self.vm_writer.writeLabel(label_end)
+        
+        # Go back to evaluate the condition again
+        self.vm_writer.writeGoto(while_exp_label)
+        
+        # End loop label
+        self.vm_writer.writeLabel(while_end_label)
 
     def _compileExpression(self):
         """
@@ -698,6 +699,10 @@ class CompilationEngine:
         """
         token = self.tokenizer.current_token
 
+        # Debugging: Print the variable being accessed
+        print(f"DEBUG: Accessing variable `{token}` in scope `{self.symbol_table._current_scope}`")
+
+
         #1. integer constant eg 1,2,3...
         #case 1
         if token.isdigit():
@@ -706,12 +711,13 @@ class CompilationEngine:
 
         #case 2. string constant
         elif token.startswith('"') :
-            length = len(token)
+            string_content = self.tokenizer.stringVal()
+            length = len(string_content)
             self.vm_writer.writePush("constant", length)
             self.vm_writer.writeCall("String.new", 1)
 
 
-            for char in token:
+            for char in string_content:
                 self.vm_writer.writePush("constant", ord(char))
                 self.vm_writer.writeCall("String.appendChar", 2)
 
@@ -760,7 +766,7 @@ class CompilationEngine:
         #case 6. identifier based term (varName, array, or subroutine call)
         else:
             var_name = token
-
+           
             #process first term
             self.tokenizer.advance()
 
@@ -773,7 +779,7 @@ class CompilationEngine:
                 #process ']'
                 self.tokenizer.advance()
 
-                segment = self.symbol_table._kindof(var_name)
+                segment = self._get_vm_segment(self.symbol_table._kindof(var_name))
                 index = self.symbol_table._indexof(var_name)
 
                 self.vm_writer.writePush(segment, index) #arr+i
@@ -798,15 +804,46 @@ class CompilationEngine:
                     method_name = self.tokenizer.current_token
                     self.tokenizer.advance()
 
+                    #check if var name in built in classes
+                    if var_name in self.built_in_classes:
+
+                        full_fxn_name = f"{var_name}.{method_name}"
+
+                    else:
+
+                        #check if var_name is a valid variable(field/local)
+                        try:
+                            if var_name in self.built_in_classes:
+                                # It's a built-in class, no need to look it up in the symbol table
+                                pass
+                            elif self.symbol_table._kindof(var_name) in ["field","local"]:
+                                segment = self._get_vm_segment(self.symbol_table._kindof(var_name))
+                                index = self.symbol_table._indexof(var_name)
+                                self.vm_writer.writePush(segment,index)
+                                n_args+=1
+                                var_name = self.symbol_table._typeof(var_name)
+                                full_fxn_name = f"{var_name}.{method_name}"
+
+                            else:
+                                full_fxn_name = f"{var_name}.{method_name}"
+
+                        except VariableNotFoundError:
+                            full_fxn_name = f"{var_name}.{method_name}"
+
                     #check if its calling instance
-                    if self.symbol_table._kindof(var_name) in ["field","local"]:
-
-                        segment = self.symbol_table._kindof(var_name)
-                        index = self.symbol_table._indexof(var_name)
-
-                        self.vm_writer.writePush(segment,index) #push this
-                        var_name = self.symbol_table._typeof(var_name)
-                        n_args+=1 #first argument this
+                    try:
+                        if var_name in self.built_in_classes:
+                            # It's a built-in class, no need to look it up in the symbol table
+                            pass
+                        elif self.symbol_table._kindof(var_name) in ["field","local"]:
+                            segment = self._get_vm_segment(self.symbol_table._kindof(var_name))
+                            index = self.symbol_table._indexof(var_name)
+                            self.vm_writer.writePush(segment,index) #push this
+                            var_name = self.symbol_table._typeof(var_name)
+                            n_args+=1 #first argument this
+                    except VariableNotFoundError:
+                        # If it's not in the symbol table, assume it's a class name
+                        pass
 
                     full_fxn_name = f"{var_name}.{method_name}"
 
@@ -828,7 +865,7 @@ class CompilationEngine:
 
             #case 6c
             else:
-                segment = self.symbol_table._kindof(var_name)
+                segment = self._get_vm_segment(self.symbol_table._kindof(var_name))
                 index = self.symbol_table._indexof(var_name)
 
                 self.vm_writer.writePush(segment,index)
@@ -838,82 +875,62 @@ class CompilationEngine:
 
 
     def _compileDo(self):
-        """
-        Compiles a do statement
-        Grammar : doStatement: 'do' subroutineCall
-
-        """
-
-        #process 'do' keyword
+        # Process 'do' keyword
         self.tokenizer.advance()
 
-        #process subroutine call
-        #subroutine may be in 2 forms:
-        #1. subroutineName '(' expressionList ')'
-        #2. (className|varName) '.' subroutineName '(' expressionlist ')'
-
-        #process the first identifier - subroutineName or className/varName
+        # Process subroutine call
         identifier = self.tokenizer.current_token
         self.tokenizer.advance()
 
-
-        #nArgs
         n_args = 0
         is_method = False
 
-        #check if next token is a .
-        if self.tokenizer.current_token == ".":
-            #passed the .
-            self.tokenizer.advance()
-
-            #handle subroutineName
+        if self.tokenizer.current_token == '.':
+            self.tokenizer.advance()  # Consume '.'
             method_name = self.tokenizer.current_token
             self.tokenizer.advance()
 
-
-            #check if calling on an object instance
-            if self.symbol_table._kindof(identifier) in ["field", "local"]:
-                segment = self.symbol_table._kindof(identifier)
-                index = self.symbol_table._indexof(identifier)
-
-                self.vm_writer.writePush(segment, index) #push obj ref (this)
-
-                identifier = self.symbol_table._typeof(identifier) #get class name
-                is_method = True
-                n_args +=1
-
-            full_fxn_name = f"{identifier}.{method_name}"
+            # Check if identifier is a built-in class
+            if identifier in self.built_in_classes:
+                # Static call (e.g., Output.printString)
+                full_fxn_name = f"{identifier}.{method_name}"
+            else:
+                # Check if identifier is a variable (field/local)
+                try:
+                    kind = self.symbol_table._kindof(identifier)
+                    if kind in ["field", "local"]:
+                        segment = self._get_vm_segment(kind)
+                        index = self.symbol_table._indexof(identifier)
+                        self.vm_writer.writePush(segment, index)
+                        n_args += 1
+                        class_name = self.symbol_table._typeof(identifier)
+                        full_fxn_name = f"{class_name}.{method_name}"
+                    else:
+                        # Static call (e.g., Main.helper)
+                        full_fxn_name = f"{identifier}.{method_name}"
+                except VariableNotFoundError:
+                    # Assume it's a class name (e.g., Main.doSomething)
+                    full_fxn_name = f"{identifier}.{method_name}"
         else:
-        #its a method of THIS class
-
+            # Method of THIS class (e.g., do foo())
             full_fxn_name = f"{self.class_name}.{identifier}"
             self.vm_writer.writePush("pointer", 0)
             is_method = True
-            n_args+=1
+            n_args += 1
 
+        # Process '(' and expression list
+        self.tokenizer.advance()  # Consume '('
+        n_args += self._compileExpressionList()
+        self.tokenizer.advance()  # Consume ')'
 
+        # Generate VM call
+        self.vm_writer.writeCall(full_fxn_name, n_args)
 
-        #process '('
+        # Discard return value
+        self.vm_writer.writePop("temp", 0)
+
+        # Process ';'
         self.tokenizer.advance()
-
-        #compile expressionlist
-        n_args +=  self._compileExpressionList()
-
-        #handle ')'
-        self.tokenizer.advance()
-
-        #generate call
-        self.vm_writer.writeCall(name=full_fxn_name, nArgs=n_args)
-
-        #discard return value
-        self.vm_writer.writePop("temp",0)
-
-        #termination colon ';'
-        self.tokenizer.advance()
-
-
-
-
         
 
     def _compileReturn(self):
@@ -951,42 +968,37 @@ class CompilationEngine:
         Compiles a (possibly empty) comma-separated list of expressions.
         Grammar: expressionList: (expression (',' expression)*)?
         """
-        self._write("<expressionList>")
-        self.indent_level += 1
 
+        count = 0
         # If the next token is not ')', then there is at least one expression.
         if self.tokenizer.current_token != ')':
+
+            count+=1
             # Process the first expression.
             self._compileExpression()
             
             # Process any additional expressions separated by commas.
             while self.tokenizer.current_token == ',':
+                count+=1
                 self._write_token(self.tokenizer.current_token)  # Write the comma.
                 self.tokenizer.advance()
                 self._compileExpression()
 
-        self.indent_level -= 1
-        self._write("</expressionList>")
-
+        return count
 
     def _close(self):
         "close output file"
         self.output.close()
 
 
-"""
-try:
-    input_file = r"C:\Users\LENOVO\Documents\nand_2_tetris_2\nand2tetris\projects\10\ArrayTest\Main.jack"
+
+
+input_file = r"C:\Users\LENOVO\Documents\nand_2_tetris_2\nand2tetris\projects\10\ArrayTest\Main.jack"
    
 
-    engine = CompilationEngine(input_file)
-    engine._compileClass()
+engine = CompilationEngine(input_file)
+engine._compileClass()
 
-except Exception as e:
-    print(f"Error occured : {e}")
-
-finally:
-    engine._close()"""
 
 
     

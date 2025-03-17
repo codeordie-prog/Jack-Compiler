@@ -68,8 +68,9 @@ class SymbolTable:
 
     def _varCount(self,kind)->int:
         #returns no. of variables of the given kind already defined inthe scope
+        scope = "class" if kind in ["static","field"] else "subroutine"
         
-        return sum(1 for var in self._symbol_table[self._current_scope] if var['kind']==kind)
+        return sum(1 for var in self._symbol_table[scope] if var['kind']==kind)
     
 
 
@@ -81,8 +82,13 @@ class SymbolTable:
 
             if variable["name"] == name:
                 return variable["kind"]
+            
+        if scope == "subroutine":
+            for variable in self._symbol_table["class"]:
+                if variable["name"] == name:
+                    return variable["kind"]
                 
-        raise VariableNotFoundError(name, self._current_scope)    
+        raise VariableNotFoundError(name, self._current_scope, "Variable not found")    
 
     def _typeof(self, name:str)->str:
         #returns type of
@@ -94,8 +100,13 @@ class SymbolTable:
             if variable["name"] == name:
 
                 return variable["type"]
+            
+        if self._current_scope == "subroutine":
+            for variable in self._symbol_table["class"]:
+                if variable["name"] == name:
+                    return variable["type"]
 
-        raise VariableNotFoundError(name, self._current_scope)
+        raise VariableNotFoundError(name, self._current_scope, "Variable not found")
 
     def _indexof(self, name:str)->int:
         #return index assigned
@@ -108,7 +119,12 @@ class SymbolTable:
 
                return variable["index"]
             
-        raise VariableNotFoundError(name, self._current_scope)
+        if scope == "subroutine":
+            for variable in self._symbol_table["class"]:
+                if variable["name"] == name:
+                    return variable["index"]
+            
+        raise VariableNotFoundError(name, self._current_scope , "variable not found")
             
 
     
