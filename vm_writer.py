@@ -13,8 +13,8 @@ class VM_Writer:
         
 
     def writePush(self, memory_segment:str, index:int):
-        #write push command
         self.output_file.write(f"push {memory_segment} {index}\n")
+        self.output_file.flush()  # Force write to disk
 
 
     def writePop(self, memory_segment:str, index:int):

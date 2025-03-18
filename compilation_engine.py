@@ -18,7 +18,7 @@ class CompilationEngine:
         
         """
 
-        self.output_file = os.path.splitext(input_file)[0] + ".XML"
+        self.output_file = os.path.splitext(input_file)[0] + ".vm"
         self.input_file = input_file
         self.tokenizer = Tokenizer(input_file=input_file)
         self.vm_writer = VM_Writer(input_file.replace(".jack", ".vm"))
@@ -43,7 +43,7 @@ class CompilationEngine:
         """
 
         indent = " " * self.indent_level
-        self.output.write(indent + line + "\n")
+        #self.output.write(indent + line + "\n")
 
     def _write_token(self, token):
         """
@@ -71,7 +71,7 @@ class CompilationEngine:
         else:
             xml_line = token
 
-        self._write(xml_line)
+        #self._write(xml_line)
 
 
     def _expect_token(self, expected_token:list):
@@ -99,54 +99,65 @@ class CompilationEngine:
         return "this" if kind == "field"  else kind
 
     def _compileClass(self):
-        #compiles a complete class - its the first method to be called by the engine
-        #rule class: 'class' className '{' classVarDec* subroutineDec* '}'
+        try:
 
-        #write all tokens
-        #print(self.tokenizer.tokens)
+            print(f"Starting compilation of class: {self.input_file}")
+          
+            #---------------------------------
+            #process the 'class' keyword
+            #-------------------------------
+            self.tokenizer.advance() #advance from class keyword
 
-       # self._write("<class>")
-
-        #increase identation level for the class
-        #self.indent_level += 1
-
-        #---------------------------------
-        #process the 'class' keyword
-        #-------------------------------
-        self.tokenizer.advance() #advance from class keyword
-
-        self.class_name = self.tokenizer.current_token #save class name
-        self.tokenizer.advance()
+            self.class_name = self.tokenizer.current_token #save class name
+            print(f"Saved class name : {self.class_name}")
+            self.tokenizer.advance() #currently at '{'
 
 
 
-        #process the opening bracket '{'
-        #self._expect_token(['{'])
-       # self._write_token(self.tokenizer.current_token)
-        self.tokenizer.advance() # move to the first classVarDec or subroutines if it lacks the classVar
+            #process the opening bracket '{'
+            #self._expect_token(['{'])
+        # self._write_token(self.tokenizer.current_token)
+            self.tokenizer.advance() # move to the first classVarDec or subroutines if it lacks the classVar
 
 
-        #process classVar
-        while self.tokenizer.current_token in ["static", "field"]:
-            self._compileClassVarDec() #compile the variables
+            #process classVar
+            while self.tokenizer.current_token in ["static", "field"]:
+
+                print(f"Advancing to _compileClassVarDec current token is : {self.tokenizer.current_token}")
+                self._compileClassVarDec() #compile the variables
+                #self.tokenizer.advance()
+            
+            #consume the  '}'
+            #self.tokenizer.advance()
+            print(f"Proceeding to constructor/method level the current token is : {self.tokenizer.current_token}")
+
+            #self.tokenizer.advance()
+
+            # process subroutines
+            while self.tokenizer.current_token in ["constructor","method","function"]:
+                print(f"Advancing to _compilesubroutine current token is : {self.tokenizer.current_token}")
+                self._compileSubroutineDec() #compile subroutines
+
+            
+            #process the '}' of the class
+            #self._expect_token(expected_token=["}"])
+            #self._write_token(self.tokenizer.current_token)
+            print(f"Done with the constructor/method current token is {self.tokenizer.current_token}")
+            self.tokenizer.advance()  #advance from '}'
 
 
-        # process subroutines
-        while self.tokenizer.current_token in ["constructor","method","function"]:
-            self._compileSubroutineDec() #compile subroutines
+            #reduce indent level when closing the class node
+            #self.indent_level-=1
 
-        
-        #process the '}' of the class
-        #self._expect_token(expected_token=["}"])
-        #self._write_token(self.tokenizer.current_token)
-        self.tokenizer.advance()  #advance from '}'
+            #write closing tag
+            #self._write("</class>")
 
+        except Exception as e:
+            print(f"Error compiling class {self.input_file}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
-        #reduce indent level when closing the class node
-        #self.indent_level-=1
-
-        #write closing tag
-        #self._write("</class>")
 
 
     def _compileClassVarDec(self):
@@ -157,25 +168,30 @@ class CompilationEngine:
         
         """
 
+        print(f"currently inside _compileClassVarDec current token is : {self.tokenizer.current_token}")
         #get kind
         kind = self.tokenizer.current_token #either static|field
-        self.tokenizer.advance()
+        self.tokenizer.advance() #advance to type
 
         #get type
         type_ = self.tokenizer.current_token
-        self.tokenizer.advance()
+        print(f"getting type which is : {self.tokenizer.current_token}")
+        self.tokenizer.advance() #advance to variable name
 
 
         #get name
         name = self.tokenizer.current_token
-        self.tokenizer.advance()
+        print(f"getting name is : {self.tokenizer.current_token}")
+        self.tokenizer.advance() #advance to , if any
 
         #append symbol table
+        
         self.symbol_table._define(
             name=name,
             type=type_,
             kind=kind
         )
+        print(f"updated symbol table : {self.symbol_table._symbol_table}")
 
 
         #next token - there might be 0 or more occurences
@@ -185,6 +201,7 @@ class CompilationEngine:
             self.tokenizer.advance()
 
             #get name
+            print(f"getting name of the next variable: {self.tokenizer.current_token}")
             name = self.tokenizer.current_token
             self.tokenizer.advance()
 
@@ -194,15 +211,21 @@ class CompilationEngine:
                 type=type_,
                 kind=kind
             )
+            print(f"updating symbol table : {self.symbol_table._symbol_table}")
+
+            print(f"Current token is {self.tokenizer.current_token}")
 
             #advance to next variable if any
-            self.tokenizer.advance()
+            #self.tokenizer.advance() #advance from the ';'
+            print(f"Done with compileclassVar while loop current token : {self.tokenizer.current_token}")
 
 
 
         #process the terminating ";"
-        
         self.tokenizer.advance()
+
+        #self.tokenizer.advance()
+        print(f"Done with the compileClassvarDec current token is : {self.tokenizer.current_token}")
 
 
 
@@ -215,9 +238,10 @@ class CompilationEngine:
 
         
         """
-
+        print(f"currently inside compilesubroutineDec : {self.tokenizer.current_token}")
         #handle keyword function, method, constructor
         subroutine_type = self.tokenizer.current_token
+        print(f"determining subroutine type : {subroutine_type}")
         self.tokenizer.advance() #advance from the keyword
 
         #process return type or void
@@ -226,6 +250,7 @@ class CompilationEngine:
         #process full subroutinename(identifier)
         subroutine_name = self.tokenizer.current_token
         full_name = f"{self.class_name}.{subroutine_name}"
+        print(f"getting subroutine fullname : {full_name}")
         self.tokenizer.advance()
 
 
@@ -235,28 +260,36 @@ class CompilationEngine:
 
         #reset symbol table
         self.symbol_table._startSubroutine()
+        print(f"reseting symbol table : {self.symbol_table._symbol_table}")
         self._label_num = 0  # Reset label counter for each subroutine
 
 
         #remember methods you have to handle this
         if subroutine_type == "method":
+            
             self.symbol_table._define(
                 name="this",
                 type=self.class_name,
                 kind="argument"
             )
+            print(f"subroutine is a method so handling this: {self.symbol_table._symbol_table}")
 
         
 
         #parameter list ? (optional)
+        print(f"parameter list?")
         self._compileParameterList()
 
 
         # handle ')'
         self.tokenizer.advance()
+        print(f"Current token after compiledParameter list's closing bracket ) is : {self.tokenizer.current_token}")
+
+        #handle '{'
 
 
         #process subroutine body
+        print(f"processing subroutine body for: {full_name, subroutine_type}")
         self._compileSubroutineBody(full_name, subroutine_type)
 
 
@@ -273,6 +306,8 @@ class CompilationEngine:
         #handle '{'
         self.tokenizer.advance()
 
+        print(f"Current token is {self.tokenizer.current_token}")
+
         #handle varDec*
         while self.tokenizer.current_token == "var":
             self._compilevarDec()
@@ -280,6 +315,7 @@ class CompilationEngine:
 
         #local variables number 
         num_locals = self.symbol_table._varCount(kind="local")
+        print(f"Number of local variables is {num_locals}")
 
         #write VM function decl command
         self.vm_writer.writeFunction(name=full_function_name, nLocals=num_locals)
@@ -288,8 +324,11 @@ class CompilationEngine:
         #handle constructors
         if subroutine_type == "constructor":
 
+            print(f"Handling constructor: {full_function_name}")
+
             #get fields for object size - OS memory.alloc
             num_fields = self.symbol_table._varCount(kind="field")
+            print(f"Number of fields: {num_fields}")
             self.vm_writer.writePush(memory_segment="constant", index=num_fields)
 
             #allocate memory
@@ -297,13 +336,14 @@ class CompilationEngine:
 
             self.vm_writer.writePop(memory_segment="pointer", index=0) #align THIS to the base address
 
+            print(f"Current token after writing pop to set this : {self.tokenizer.current_token}")
 
         elif subroutine_type == "method":
             self.vm_writer.writePush(memory_segment="argument", index=0)
             self.vm_writer.writePop(memory_segment="pointer", index=0)
 
 
-
+        print(f"Current token before moving to compile statements : {self.tokenizer.current_token}")
         #process statements
         self._compileStatements()
 
@@ -345,50 +385,54 @@ class CompilationEngine:
 
 
     def _compileParameterList(self):
+        """Compiles a (possibly empty) parameter list"""
 
-        """
-        Compiles a (possibly empty) parameter list
-        Grammar : parameterList: ((type varName)(',' varName)*)?
-
-        
-        """
-
-        self._write("<parameterList>")
-        self.indent_level+=1
-
-
-        #check if its empty
+        print(f"inside parameter list ....")    # Check if it's empty
         if self.tokenizer.current_token != ")":
-
-            #process first param
-            self._write_token(self.tokenizer.current_token)
+            # Process first parameter
+            param_type = self.tokenizer.current_token
+            print(f"Getting the type of first param : {self.tokenizer.current_token}: {param_type}")
             self.tokenizer.advance()
-
-            #varName
-            self._write_token(self.tokenizer.current_token)
+            
+            # Get parameter name
+            param_name = self.tokenizer.current_token
+            print(f"Getting the name of first param : {self.tokenizer.current_token}: {param_name}")
             self.tokenizer.advance()
-
-
-            #additional arguments if ',' is present
+            
+            # Add to symbol table
+            self.symbol_table._define(
+                name=param_name,
+                type=param_type,
+                kind="argument"
+            )
+            print(f"updating symbol table : {self.symbol_table._symbol_table}")
+            
+            # Handle additional parameters
             while self.tokenizer.current_token == ',':
-                #write the comma
-                self._write_token(self.tokenizer.current_token)
+                self.tokenizer.advance()  # Skip comma
+                
+                # Get next parameter type
+                param_type = self.tokenizer.current_token
+                print(f"Getting the type of next param : {self.tokenizer.current_token}: {param_type}")
                 self.tokenizer.advance()
-
-                #write type of the var
-                self._write_token(self.tokenizer.current_token)
+                
+                # Get next parameter name
+                param_name = self.tokenizer.current_token
+                print(f"Getting the name of next param : {self.tokenizer.current_token}: {param_name}")
                 self.tokenizer.advance()
+                
+                # Add to symbol table
+                self.symbol_table._define(
+                    name=param_name,
+                    type=param_type,
+                    kind="argument"
+                )
 
-                #handle varName
-                self._write_token(self.tokenizer.current_token)
-                self.tokenizer.advance()
 
-
-        #indent
-        self.indent_level-=1
-
-        #closing tag
-        self._write("</parameterList>")
+        print(f"Now this is the symbol table: {self.symbol_table._symbol_table}")
+        print(f"This is the current token : {self.tokenizer.current_token}")
+        
+        return  # No need to advance past the closing parenthesis here
         
 
     def _compilevarDec(self):
@@ -808,6 +852,7 @@ class CompilationEngine:
                     if var_name in self.built_in_classes:
 
                         full_fxn_name = f"{var_name}.{method_name}"
+                        n_args = 0
 
                     else:
 
@@ -932,36 +977,45 @@ class CompilationEngine:
         # Process ';'
         self.tokenizer.advance()
         
+        
 
     def _compileReturn(self):
         """
         Compiles return statement
         Grammar : returnStatement 'return' expression? ';'
-
         """
-   
-        #process 'return'
+        # Process 'return'
         self.tokenizer.advance()
 
+        # Check if we're in a constructor
+        is_constructor = False
+        for scope in self.symbol_table._symbol_table.values():
+            for var in scope:
+                if var.get("name") == "this" and var.get("kind") == "argument":
+                    is_constructor = True
+                    break
 
-        #process expression if any
+        # Process expression if any
         if self.tokenizer.current_token == ";":
-            #void
+            # Void return - always push constant 0
             self.vm_writer.writePush("constant", 0)
             self.vm_writer.writeReturn()
             self.tokenizer.advance()
             return
-        
 
-        #compile exp
+        # Compile expression
         self._compileExpression()
+
+        # If this is a constructor, make sure we return 'this'
+        if is_constructor:
+            self.vm_writer.writePop("temp", 0)  # Discard the expression result
+            self.vm_writer.writePush("pointer", 0)  # Push 'this'
+
+        # Write return
         self.vm_writer.writeReturn()
-            
 
-
-        #process ';'
+        # Process ';'
         self.tokenizer.advance()
-
 
     def _compileExpressionList(self):
         """
@@ -987,19 +1041,12 @@ class CompilationEngine:
         return count
 
     def _close(self):
-        "close output file"
-        self.output.close()
+        """Close output file"""
+        if hasattr(self, 'vm_writer') and self.vm_writer:
+            self.vm_writer.close()
+        if hasattr(self, 'output') and self.output:
+            self.output.close()
 
 
 
-
-input_file = r"C:\Users\LENOVO\Documents\nand_2_tetris_2\nand2tetris\projects\10\ArrayTest\Main.jack"
-   
-
-engine = CompilationEngine(input_file)
-engine._compileClass()
-
-
-
-    
 

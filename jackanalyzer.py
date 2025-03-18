@@ -4,48 +4,47 @@ import os
 
 class JackAnalyzer:
     
-    def __init__(self, input_file):
-
-
-        #check if path exists
-        if os.path.exists(input_file):
+    def __init__(self, input_path):
+        # Check if path exists
+        if os.path.exists(input_path):
             try:
-                if os.path.isdir(input_file):
+                if os.path.isdir(input_path):
+                    # Process all .jack files in the directory
+                    jack_files = [file for file in os.listdir(input_path) if file.endswith(".jack")]
+
+                    print(jack_files)
                     
-                    myfiles = [file for file in os.listdir(input_file) if file.endswith(".jack")]
-
-                    for file in myfiles:
+                    for file in jack_files:
+                        # Create full path by joining directory and filename
+                        full_file_path = os.path.join(input_path, file)
+                        print(f"Processing file: {full_file_path}")
                         
-                        engine = CompilationEngine(input_file=file)
+                        # Pass the full path to the CompilationEngine
+                        engine = CompilationEngine(input_file=full_file_path)
+                        engine._compileClass()  # Start compilation
                         engine._close()
-
                 else:
-                    engine = CompilationEngine(input_file=input_file)
+                    # Process a single file
+                    print(f"Processing file: {input_path}")
+                    engine = CompilationEngine(input_file=input_path)
+                    engine._compileClass()  # Start compilation
                     engine._close()
             except Exception as e:
-                print(f"An error occured : {e}")
-
-        
-
-
+                print(f"Error compiling {input_path}: {e}")
+                import traceback
+                traceback.print_exc()  # This will print the full stack trace
         else:
-            raise FileNotFoundError
-        
-
-    
-
+            raise FileNotFoundError(f"Path not found: {input_path}")
 
 if __name__ == "__main__":
-
     try:
-        input_file = sys.argv[1]
-
-        if input_file:
-            JackAnalyzer(input_file)
-
-        else:
-            raise FileNotFoundError("Provide the directory or input file.")
-    except IndexError as e:
-        print(f"Provide parameter for the input file or directory.")
+        if len(sys.argv) < 2:
+            print("Usage: python jackanalyzer.py <input_file_or_directory>")
+            sys.exit(1)
+            
+        input_path = sys.argv[1]
+        JackAnalyzer(input_path)
+    except Exception as e:
+        print(f"Error: {e}")
 
     
