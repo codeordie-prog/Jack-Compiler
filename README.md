@@ -3,7 +3,7 @@ Jack Compiler
 A compiler that translates Jack programming language code into virtual machine code.
 
 Overview
-This Jack Compiler transforms high-level Jack language programs into virtual machine code that can be executed on the Hack platform. The compiler follows a standard compilation process, including lexical analysis, syntax parsing, and code generation.
+This Jack Compiler transforms high-level Jack language programs into virtual machine code that can be executed on a given machine platform. The compiler follows a standard compilation process, including lexical analysis, syntax parsing, and code generation.
 
 Jack Language Grammar
 The Jack language is a simple, Java-like programming language with the following grammar:
@@ -11,12 +11,14 @@ The Jack language is a simple, Java-like programming language with the following
 Program Structure
 ```
 class: 'class' className '{' classVarDec* subroutineDec* '}'
+
 ```
 
 ### Class Variable Declarations
 ```
 classVarDec: ('static' | 'field') type varName (',' varName)* ';'
 type: 'int' | 'char' | 'boolean' | className
+
 ```
 
 ### Subroutine Declarations
@@ -57,6 +59,8 @@ keywordConstant: 'true' | 'false' | 'null' | 'this'
 
 ## Usage
 
+cd into the folder with the jackanalyzer.py file
+
 ```
 python jackanalyzer.py  [input]
 ```
@@ -67,7 +71,7 @@ Where `[input]` can be:
 
 ## Output
 
-The jackanalyzer outputs .XML textual parse tree for testing and debugging.
+The jackanalyzer outputs file.vm containing vm instructions for the input file.  
 
 The compiler for each input `.jack` file, the compiler produces a corresponding `.vm` file containing the compiled VM code.
 
